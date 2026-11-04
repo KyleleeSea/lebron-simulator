@@ -39,7 +39,7 @@ const SIM = (() => {
   };
   const DEFAULT_CFG = { minutes: 3, crowd: 14, photos: 3, prHits: 4, startRole: 0, bot: false,
     perks: [{ L: 0, P: 0 }, { L: 0, P: 0 }] };
-  const EMPTY_INPUT = [0, 0, 0, 0]; // [moveBits, actionBits, aimX, aimY]
+  const EMPTY_INPUT = [0, 0, 0, 0, 0]; // [moveX, moveY, actionBits, aimX, aimY] (move/aim are vectors scaled by 256)
   // action bits
   const A_PRIMARY = 1, A_DASH = 2, A_PERK1 = 4, A_PERK2 = 8, A_PERK3 = 16;
 
@@ -227,31 +227,33 @@ const SIM = (() => {
         }
       }
     }
-    return [moveBits(mx, my), a, aim.x, aim.y];
+    const mv = norm(mx, my);
+    return [mv.x, mv.y, a, aim.x, aim.y];
   }
 
   // ---- player update -----------------------------------------------------
   function updatePlayer(s, i, inp, ev) {
     const p = s.players[i];
     const isL = s.lebron === i;
-    const m = inp[0] | 0, a = inp[1] | 0;
-    let ax = clamp(inp[2] | 0, -256, 256), ay = clamp(inp[3] | 0, -256, 256);
+    const a = inp[2] | 0;
+    let mvx = clamp(inp[0] | 0, -256, 256), mvy = clamp(inp[1] | 0, -256, 256);
+    if (mvx * mvx + mvy * mvy > 256 * 256) { const n = norm(mvx, mvy); mvx = n.x; mvy = n.y; }
+    let ax = clamp(inp[3] | 0, -256, 256), ay = clamp(inp[4] | 0, -256, 256);
     const lp = isL ? lebronParams(s, p) : null;
     const pp = isL ? null : papParams(p);
     if (p.dashCd > 0) p.dashCd--;
     if (p.snapCd > 0) p.snapCd--;
     if (p.stun > 0) { p.stun--; }
     const canAct = p.stun === 0;
-    let mx = ((m & 8) ? 1 : 0) - ((m & 4) ? 1 : 0);
-    let my = ((m & 2) ? 1 : 0) - ((m & 1) ? 1 : 0);
-    if (!canAct) { mx = 0; my = 0; }
+    if (!canAct) { mvx = 0; mvy = 0; }
+    const moving = mvx !== 0 || mvy !== 0;
     // facing
     if (ax !== 0 || ay !== 0) { const f = norm(ax, ay); p.fx = f.x; p.fy = f.y; }
-    else if (mx !== 0 || my !== 0) { const f = norm(mx, my); p.fx = f.x; p.fy = f.y; }
+    else if (moving) { const f = norm(mvx, mvy); p.fx = f.x; p.fy = f.y; }
     // dash
     if (canAct && (a & A_DASH) && p.dashCd === 0 && p.dashLeft === 0) {
       let d;
-      if (mx !== 0 || my !== 0) d = norm(mx, my); else d = { x: p.fx, y: p.fy };
+      if (moving) d = norm(mvx, mvy); else d = { x: p.fx, y: p.fy };
       p.ddx = d.x; p.ddy = d.y; p.dashLeft = 6; p.dashCd = isL ? lp.dashCd : pp.dashCd;
       p.charge = 0;
       ev.push({ t: 'dash', i });
@@ -264,9 +266,7 @@ const SIM = (() => {
       let speed = isL ? lp.speed : pp.speed;
       if (!isL && p.charge > 0) speed = (speed * 154) >> 8;
       if (p.stun > 0) speed = 0;
-      let vx = mx * speed, vy = my * speed;
-      if (mx !== 0 && my !== 0) { vx = (vx * 181) >> 8; vy = (vy * 181) >> 8; }
-      p.vx = vx; p.vy = vy;
+      p.vx = (mvx * speed) >> 8; p.vy = (mvy * speed) >> 8;
     }
     p.x += p.vx; p.y += p.vy;
     p.x = clamp(p.x, PLAYER_R, W - PLAYER_R); p.y = clamp(p.y, PLAYER_R, H - PLAYER_R);
@@ -450,7 +450,7 @@ const SIM = (() => {
     if (s.phase === 1) {
       const newL = 1 - s.lebron;
       for (let i = 0; i < 2; i++) {
-        const a = ins[i][1] | 0, p = s.players[i];
+        const a = ins[i][2] | 0, p = s.players[i];
         const pick = (a & A_PERK1) ? 0 : (a & A_PERK2) ? 1 : (a & A_PERK3) ? 2 : -1;
         if (pick >= 0) { if (i === newL) p.perkL = pick; else p.perkP = pick; }
         p.prevA = a;

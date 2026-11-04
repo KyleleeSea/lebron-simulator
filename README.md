@@ -1,6 +1,6 @@
 # LeBron vs Paparazzi
 
-A two-player, peer-to-peer browser game. One player is **LeBron**, the other is the **paparazzi**.
+A two-player, first-person, peer-to-peer browser game. One player is **LeBron**, the other is the **paparazzi**.
 Whoever is LeBron when the clock hits zero wins.
 
 **Play:** https://kyleleesea.github.io/lebron-simulator/
@@ -27,7 +27,8 @@ Whoever is LeBron when the clock hits zero wins.
 
 ## Controls
 
-WASD / arrows move · mouse aims · click or space throws / holds to snap · shift dashes · 1 2 3 pick a perk during a swap.
+Mouse looks (click the game to capture the pointer) · WASD move relative to where you look (Q/E or arrows also turn) ·
+click or space throws / holds to snap · shift dashes · 1 2 3 pick a perk during a swap · minimap bottom-left shows everyone.
 
 ## Netcode
 
@@ -39,6 +40,8 @@ WASD / arrows move · mouse aims · click or space throws / holds to snap · shi
 - Every 20 ticks each peer hashes its full state and sends it; a mismatch triggers an automatic
   snapshot resync from the host. Redundant input history is sent with every packet.
 - Solo mode runs the same lockstep loop against a deterministic bot.
+- The first-person view is drawn on a 2D canvas (projected walls and floor, depth-sorted billboard sprites); the
+  deterministic simulation stays top-down 2D so rendering can never affect the game state.
 
 ## Run locally
 

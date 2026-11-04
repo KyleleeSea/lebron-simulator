@@ -77,7 +77,7 @@
   function leaveAll() {
     if (transport) { try { transport.send({ t: 'leave' }); } catch (_) {} transport.destroy(); transport = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-    game = null; solo = false; lobby.connected = false; lobby.ready = [false, false]; rtt = null; banner('');
+    game = null; solo = false; lobby.connected = false; try { document.exitPointerLock(); } catch (_) {} lobby.ready = [false, false]; rtt = null; banner('');
     show('menu');
   }
 
@@ -159,32 +159,36 @@
   }
 
   // ---- input -------------------------------------------------------------
-  const keys = new Set(); let mouse = { x: 0, y: 0, down: false }; let perkKey = 0;
+  const keys = new Set(); let mouse = { down: false }; let perkKey = 0;
+  let yaw = 0, locked = false, touch = false, touchLast = null, touchMoved = false;
+  const LOOK_SENS = 0.0022;
   window.addEventListener('keydown', e => { if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return; keys.add(e.code); if (e.code === 'Digit1') perkKey = SIM.A_PERK1; if (e.code === 'Digit2') perkKey = SIM.A_PERK2; if (e.code === 'Digit3') perkKey = SIM.A_PERK3; if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); });
   window.addEventListener('keyup', e => keys.delete(e.code));
   window.addEventListener('blur', () => { keys.clear(); mouse.down = false; });
-  canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-  canvas.addEventListener('mousedown', e => { if (e.button === 0) { mouse.down = true; AUDIO.ensure(); } });
+  document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
+  canvas.addEventListener('mousemove', e => { if (locked) yaw += e.movementX * LOOK_SENS; });
+  canvas.addEventListener('mousedown', e => { if (e.button !== 0) return; AUDIO.ensure(); if (!locked && !touch && game && game.state.phase === 0) { try { canvas.requestPointerLock(); } catch (_) {} return; } mouse.down = true; });
   window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
-  canvas.addEventListener('touchstart', e => { const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; mouse.down = true; e.preventDefault(); }, { passive: false });
-  canvas.addEventListener('touchmove', e => { const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; e.preventDefault(); }, { passive: false });
-  canvas.addEventListener('touchend', () => { mouse.down = false; });
+  canvas.addEventListener('touchstart', e => { touch = true; const t = e.touches[0]; touchLast = [t.clientX, t.clientY]; touchMoved = false; mouse.down = true; AUDIO.ensure(); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchmove', e => { const t = e.touches[0]; if (touchLast) { yaw += (t.clientX - touchLast[0]) * 0.006; if (Math.abs(t.clientX - touchLast[0]) > 4) { touchMoved = true; mouse.down = false; } } touchLast = [t.clientX, t.clientY]; e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchend', () => { mouse.down = false; touchLast = null; });
 
-  function viewTransform() { const cw = canvas.clientWidth, ch = canvas.clientHeight; const scale = Math.min(cw / SIM.WPX, ch / SIM.HPX); return { scale, ox: (cw - SIM.WPX * scale) / 2, oy: (ch - SIM.HPX * scale) / 2 }; }
   function sampleInput() {
-    const me = game.state.players[myIdx];
-    let mx = 0, my = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) my -= 1; if (keys.has('KeyS') || keys.has('ArrowDown')) my += 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1; if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
+    const st = game.state;
+    let fwd = 0, strafe = 0;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) fwd += 1; if (keys.has('KeyS') || keys.has('ArrowDown')) fwd -= 1;
+    if (keys.has('KeyA')) strafe -= 1; if (keys.has('KeyD')) strafe += 1;
+    if (keys.has('ArrowLeft') || keys.has('KeyQ')) yaw -= 0.075; if (keys.has('ArrowRight') || keys.has('KeyE')) yaw += 0.075;
+    const fx = Math.cos(yaw), fy = Math.sin(yaw), rx = -fy, ry = fx;
+    let mvx = fx * fwd + rx * strafe, mvy = fy * fwd + ry * strafe;
+    const len = Math.hypot(mvx, mvy);
+    if (len > 0) { mvx = Math.round(mvx / len * 256); mvy = Math.round(mvy / len * 256); } else { mvx = 0; mvy = 0; }
     let a = 0;
     if (mouse.down || keys.has('Space')) a |= SIM.A_PRIMARY;
     if (keys.has('ShiftLeft') || keys.has('ShiftRight')) a |= SIM.A_DASH;
     if (perkKey) { a |= perkKey; perkKey = 0; }
-    const v = viewTransform();
-    const wx = (mouse.x - v.ox) / v.scale * SIM.FP, wy = (mouse.y - v.oy) / v.scale * SIM.FP;
-    const aim = SIM.norm(Math.round(wx - me.x), Math.round(wy - me.y));
-    return [SIM.moveBits(mx, my), a, aim.x, aim.y];
+    return [mvx, mvy, a, Math.round(fx * 256), Math.round(fy * 256)];
   }
 
   // ---- game --------------------------------------------------------------
@@ -196,6 +200,7 @@
       onEvents: ev => onEvents(ev), onDesync: t => banner('Desync at tick ' + t + ' — resyncing from host', 2500) });
     ls.debug = new URLSearchParams(location.search).has('debug');
     game = { ls, state, names: lobby.names.slice(), delay };
+    { const me = state.players[myIdx]; yaw = Math.atan2(me.fy, me.fx); }
     banner(''); $('endbtns').classList.add('hidden');
     show('game'); resize();
     if (!raf) raf = requestAnimationFrame(loop);
@@ -214,7 +219,8 @@
         case 'throw': AUDIO.throw(); break; case 'papHit': AUDIO.bonk(); break; case 'crowdHit': AUDIO.crowd(); break;
         case 'dash': if (e.i === myIdx) AUDIO.dash(); break; case 'catch': AUDIO.catch(); break;
         case 'swapStart': AUDIO.swap(); break;
-        case 'end': AUDIO.end(); $('endbtns').classList.remove('hidden'); $('btnRematch').classList.toggle('hidden', false); break;
+        case 'swapDone': { const me = game.ls.state.players[myIdx]; yaw = Math.atan2(me.fy, me.fx); } break;
+        case 'end': AUDIO.end(); $('endbtns').classList.remove('hidden'); try { document.exitPointerLock(); } catch (_) {} break;
       }
     }
   }
@@ -224,7 +230,7 @@
     if (!game) { raf = 0; return; }
     raf = requestAnimationFrame(loop);
     const ls = game.ls;
-    RENDER.draw(ctx, canvas.clientWidth, canvas.clientHeight, ls.state, ls.prev, ls.alpha, { myIdx, names: game.names, rtt: solo ? null : rtt, delay: game.delay, stallMs: ls.stallMs || 0 });
+    RENDER.draw(ctx, canvas.clientWidth, canvas.clientHeight, ls.state, ls.prev, ls.alpha, { myIdx, names: game.names, rtt: solo ? null : rtt, delay: game.delay, stallMs: ls.stallMs || 0, yaw, locked, touch });
   }
 
   renderPerkPickers();
