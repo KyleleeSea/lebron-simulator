@@ -7,15 +7,19 @@ Whoever is LeBron when the clock hits zero wins.
 
 ## Rules
 
-- **Paparazzi** hold the snap button with LeBron inside their frame (range, viewing angle, and a clear
-  line of sight past fans and planters) for half a second to take a photo. Three photos (configurable)
-  steal the fame: the paparazzi becomes LeBron and LeBron becomes the paparazzi.
-- **LeBron** throws a basketball. Hitting the paparazzi wipes every photo they have taken so far and
-  stuns them. The ball bounces off walls and planters and can be caught on the rebound; a loose ball
-  returns after a few seconds.
-- **Fans** wander the arena and drift toward LeBron. They block the paparazzi's line of sight, but
-  if LeBron's ball hits one he loses PR. At 0 PR the roles swap.
-- Both players can **dash** (shift). Matches last 1 to 5 minutes, chosen by the host.
+- **Paparazzi** are disguised as a fan in the crowd. Walking keeps the disguise; sprinting, dashing and
+  focusing the camera raise an **exposure** meter, and once it is high LeBron can see the camera (and the
+  paparazzi on his minimap). Hold the snap button with LeBron inside the viewfinder (range, angle, and a
+  clear line of sight past fans and planters) for about half a second to take a photo; the raised camera
+  and its lens glint are visible while focusing. Three photos (configurable) steal the fame: the paparazzi
+  becomes LeBron and LeBron becomes the paparazzi, with a fresh disguise.
+- **LeBron** throws a basketball. Hitting the paparazzi wipes every photo they have taken so far, stuns
+  them and blows their cover. The ball bounces off walls and planters and can be caught on the rebound; a
+  loose ball returns after a few seconds.
+- **Fans** wander the arena, drift toward LeBron and face him (some hold up phones). They block the
+  paparazzi's line of sight and hide the paparazzi, but if LeBron's ball hits one he loses PR. Standing
+  among fans slowly restores PR. At 0 PR the roles swap.
+- Both players can **dash** (space). Matches last 1 to 5 minutes, chosen by the host.
 
 ## Rebalancing choices
 
@@ -23,12 +27,12 @@ Whoever is LeBron when the clock hits zero wins.
   who starts as LeBron.
 - **Perks** (each player, re-pickable with 1/2/3 during every role swap):
   - LeBron: Cannon Arm (faster ball), Thick Skin (cheaper crowd hits), Quick Hands (fast ball return, wide pickup)
-  - Paparazzi: Zoom Lens (long, narrow frame), Autofocus (faster snaps), Wide Angle (wide, short frame, faster)
+  - Paparazzi: Zoom Lens (long, narrow frame), Autofocus (faster snaps), Low Profile (exposure builds slower and fades faster, quicker sneaking)
 
 ## Controls
 
 Mouse looks (click the game to capture the pointer) · WASD move relative to where you look (Q/E or arrows also turn) ·
-click or space throws / holds to snap · shift dashes · 1 2 3 pick a perk during a swap · minimap bottom-left shows everyone.
+click or F throws / holds to snap · space dashes · shift sprints (paparazzi) · 1 2 3 pick a perk during a swap · minimap bottom-left.
 
 ## Netcode
 

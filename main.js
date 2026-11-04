@@ -19,9 +19,18 @@
   const AUDIO = (() => {
     let ac = null;
     function ensure() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} } if (ac && ac.state === 'suspended') ac.resume(); return ac; }
-    function tone(f, dur, type, vol, slide) { const a = ensure(); if (!a) return; const o = a.createOscillator(), g = a.createGain(); o.type = type || 'square'; o.frequency.value = f; if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + dur); g.gain.value = vol || 0.08; g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + dur); }
-    function noise(dur, vol) { const a = ensure(); if (!a) return; const n = a.sampleRate * dur, buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n); const s = a.createBufferSource(); s.buffer = buf; const g = a.createGain(); g.gain.value = vol || 0.1; s.connect(g).connect(a.destination); s.start(); }
-    return { ensure, snap: () => { noise(0.08, 0.2); tone(1800, 0.05, 'square', 0.05); }, focus: () => tone(900, 0.08, 'sine', 0.04), miss: () => tone(300, 0.15, 'sawtooth', 0.04, 150),
+    // spatial mix: sp = {vol, pan} computed from the listener's position/yaw
+    let sp = { vol: 1, pan: 0 };
+    function out(g) { const a = ensure(); if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = sp.pan; g.connect(p).connect(a.destination); } else g.connect(a.destination); }
+    function tone(f, dur, type, vol, slide) { const a = ensure(); if (!a) return; const o = a.createOscillator(), g = a.createGain(); o.type = type || 'square'; o.frequency.value = f; if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + dur); g.gain.value = (vol || 0.08) * sp.vol; g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur); o.connect(g); out(g); o.start(); o.stop(a.currentTime + dur); }
+    function noise(dur, vol) { const a = ensure(); if (!a) return; const n = a.sampleRate * dur, buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n); const s = a.createBufferSource(); s.buffer = buf; const g = a.createGain(); g.gain.value = (vol || 0.1) * sp.vol; s.connect(g); out(g); s.start(); }
+    function at(x, y, me, yaw) { // set spatial params for an event at world (x,y) heard by `me`
+      if (x == null || !me) { sp = { vol: 1, pan: 0 }; return; }
+      const dx = (x - me.x) / SIM.FP, dy = (y - me.y) / SIM.FP, d = Math.hypot(dx, dy);
+      let ang = Math.atan2(dy, dx) - yaw; ang = Math.atan2(Math.sin(ang), Math.cos(ang));
+      sp = { vol: Math.max(0.15, Math.min(1, 1 - (d - 120) / 900)), pan: Math.max(-1, Math.min(1, Math.sin(ang) * 0.8)) };
+    }
+    return { ensure, at, snap: () => { noise(0.08, 0.25); tone(1800, 0.05, 'square', 0.06); }, focus: () => { tone(1200, 0.06, 'sine', 0.06); setTimeout(() => tone(1500, 0.08, 'sine', 0.06), 90); }, whir: () => tone(90, 0.12, 'sawtooth', 0.035, 140), miss: () => tone(300, 0.15, 'sawtooth', 0.04, 150),
       throw: () => noise(0.12, 0.08), bonk: () => { tone(160, 0.25, 'square', 0.12, 60); noise(0.1, 0.1); }, crowd: () => { tone(220, 0.2, 'triangle', 0.1, 110); tone(440, 0.1, 'sine', 0.05); },
       dash: () => tone(500, 0.07, 'sine', 0.03, 900), swap: () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.25, 'triangle', 0.1), i * 90)); },
       end: () => { [784, 659, 523, 392].forEach((f, i) => setTimeout(() => tone(f, 0.35, 'triangle', 0.1), i * 160)); }, catch: () => tone(700, 0.08, 'sine', 0.05, 1000) };
@@ -185,8 +194,9 @@
     const len = Math.hypot(mvx, mvy);
     if (len > 0) { mvx = Math.round(mvx / len * 256); mvy = Math.round(mvy / len * 256); } else { mvx = 0; mvy = 0; }
     let a = 0;
-    if (mouse.down || keys.has('Space')) a |= SIM.A_PRIMARY;
-    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) a |= SIM.A_DASH;
+    if (mouse.down || keys.has('KeyF')) a |= SIM.A_PRIMARY;
+    if (keys.has('Space')) a |= SIM.A_DASH;
+    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) a |= SIM.A_SPRINT;
     if (perkKey) { a |= perkKey; perkKey = 0; }
     return [mvx, mvy, a, Math.round(fx * 256), Math.round(fy * 256)];
   }
@@ -212,10 +222,14 @@
     const ls = game.ls; ls.frame(performance.now()); game.state = ls.state;
   }
   function onEvents(ev) {
-    RENDER.handleEvents(ev, myIdx, game.ls.state);
+    const st = game.ls.state, me = st.players[myIdx];
+    RENDER.handleEvents(ev, myIdx, st);
     for (const e of ev) {
+      const src = e.i !== undefined && e.x === undefined ? st.players[e.i] : null;
+      AUDIO.at(e.x !== undefined ? e.x : src ? src.x : null, e.y !== undefined ? e.y : src ? src.y : null, me, yaw);
+      if (e.t === 'throw' && st.lebron !== myIdx) RENDER.noteRemoteThrow();
       switch (e.t) {
-        case 'snap': AUDIO.snap(); break; case 'focus': AUDIO.focus(); break; case 'miss': AUDIO.miss(); break;
+        case 'snap': AUDIO.snap(); break; case 'focus': AUDIO.focus(); AUDIO.whir(); break; case 'miss': AUDIO.miss(); break;
         case 'throw': AUDIO.throw(); break; case 'papHit': AUDIO.bonk(); break; case 'crowdHit': AUDIO.crowd(); break;
         case 'dash': if (e.i === myIdx) AUDIO.dash(); break; case 'catch': AUDIO.catch(); break;
         case 'swapStart': AUDIO.swap(); break;

@@ -34,14 +34,15 @@ const SIM = (() => {
     P: [
       { name: 'Zoom Lens', desc: '+40% snap range, narrow frame' },
       { name: 'Autofocus', desc: 'Photos charge 40% faster' },
-      { name: 'Wide Angle', desc: 'Very wide frame, short range, +8% speed' },
+      { name: 'Low Profile', desc: 'Blend in twice as fast, faster sneaking' },
     ],
   };
   const DEFAULT_CFG = { minutes: 3, crowd: 14, photos: 3, prHits: 4, startRole: 0, bot: false,
     perks: [{ L: 0, P: 0 }, { L: 0, P: 0 }] };
   const EMPTY_INPUT = [0, 0, 0, 0, 0]; // [moveX, moveY, actionBits, aimX, aimY] (move/aim are vectors scaled by 256)
   // action bits
-  const A_PRIMARY = 1, A_DASH = 2, A_PERK1 = 4, A_PERK2 = 8, A_PERK3 = 16;
+  const A_PRIMARY = 1, A_DASH = 2, A_PERK1 = 4, A_PERK2 = 8, A_PERK3 = 16, A_SPRINT = 32;
+  const EXPOSED = 60; // exposure level at which the paparazzi's camera becomes visible
 
   // ---- deterministic helpers -------------------------------------------
   function rnd(s) { // mulberry32 step, returns uint32
@@ -97,12 +98,15 @@ const SIM = (() => {
   function papParams(p) {
     const k = p.perkP;
     return {
-      speed: k === 2 ? 117 : 108,
-      range: k === 0 ? 330 * FP : k === 2 ? 180 * FP : 235 * FP,
-      cosHalf: k === 0 ? 241 : k === 2 ? 147 : 210, // cos 20°, 55°, 35° (x256)
-      charge: k === 1 ? 9 : 15,
+      sprint: 108,
+      sneak: k === 2 ? 84 : 64,
+      range: k === 0 ? 330 * FP : 235 * FP,
+      cosHalf: k === 0 ? 241 : 210, // cos 20°, 35° (x256)
+      charge: k === 1 ? 11 : 18,
       snapCd: 36,
       dashCd: 42,
+      expGain: k === 2 ? 1 : 2,   // halves
+      expDecay: k === 2 ? 4 : 2,
     };
   }
 
@@ -111,7 +115,7 @@ const SIM = (() => {
     return { x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: -256, dashCd: 0, dashLeft: 0, ddx: 0, ddy: 0,
       stun: 0, pr: PR_MAX, photos: 0, charge: 0, snapCd: 0,
       perkL: cfg.perks[i].L | 0, perkP: cfg.perks[i].P | 0, prevA: 0,
-      lebronTicks: 0, hits: 0, snaps: 0, crowdHits: 0, bd: 1 };
+      lebronTicks: 0, hits: 0, snaps: 0, crowdHits: 0, bd: 1, exp: 0, disg: 0, dface: 0 };
   }
   function overlapsAny(s, x, y, r) {
     for (const o of OBSTACLES) { const dx = x - o.x, dy = y - o.y; if (dx * dx + dy * dy < (r + OBS_R + 10 * FP) ** 2) return true; }
@@ -125,6 +129,7 @@ const SIM = (() => {
     P.x = pair[1].x * FP; P.y = pair[1].y * FP; P.vx = P.vy = 0;
     const f = norm(P.x - L.x, P.y - L.y);
     L.fx = f.x; L.fy = f.y; P.fx = -f.x; P.fy = -f.y;
+    P.exp = 0; P.disg = rnd(s) % 8; P.dface = rnd(s) % 3;
     s.ball.st = 0; s.ball.holder = s.lebron; s.ball.vx = s.ball.vy = 0; s.ball.bounces = 0; s.ball.ground = 0; s.ball.grace = 0;
     s.ball.x = L.x; s.ball.y = L.y;
   }
@@ -195,7 +200,7 @@ const SIM = (() => {
         else if (dist > 460 * FP) { mx = sgn(dx, DZ); my = sgn(dy, DZ); }
         else { mx = sgn(-dy * p.bd, DZ); my = sgn(dx * p.bd, DZ); }
         if ((rnd(s) % 90) === 0) p.bd = -p.bd;
-        if (b.st === 0 && dist < 430 * FP && o.stun === 0 && losClear(s, p.x, p.y, o.x, o.y) && (rnd(s) & 7) === 0) a |= A_PRIMARY;
+        if (b.st === 0 && dist < 430 * FP && o.stun === 0 && (o.charge > 0 || o.exp >= EXPOSED) && losClear(s, p.x, p.y, o.x, o.y) && (rnd(s) & 3) === 0) a |= A_PRIMARY;
         if (o.charge > 0 && p.dashCd === 0) a |= A_DASH;
       }
     } else {
@@ -203,7 +208,8 @@ const SIM = (() => {
       else { mx = sgn(-dy * p.bd, DZ); my = sgn(dx * p.bd, DZ); if ((rnd(s) % 60) === 0) p.bd = -p.bd; }
       const pp = papParams(p);
       if (dist < Math.trunc(pp.range * 9 / 10) && losClear(s, p.x, p.y, o.x, o.y)) a |= A_PRIMARY;
-      if (dist > 480 * FP && p.dashCd === 0) a |= A_DASH;
+      if (dist > 450 * FP && p.exp < 40) a |= A_SPRINT;
+      if (dist > 560 * FP && p.dashCd === 0) a |= A_DASH;
       const b = s.ball;
       if (b.st === 1) {
         const bx = p.x - b.x, by = p.y - b.y;
@@ -255,7 +261,7 @@ const SIM = (() => {
       let d;
       if (moving) d = norm(mvx, mvy); else d = { x: p.fx, y: p.fy };
       p.ddx = d.x; p.ddy = d.y; p.dashLeft = 6; p.dashCd = isL ? lp.dashCd : pp.dashCd;
-      p.charge = 0;
+      p.charge = 0; if (!isL) p.exp = Math.min(100, p.exp + 40);
       ev.push({ t: 'dash', i });
     }
     // movement
@@ -263,8 +269,9 @@ const SIM = (() => {
       p.dashLeft--;
       p.vx = p.ddx; p.vy = p.ddy; // 256 units = 16 px/tick
     } else {
-      let speed = isL ? lp.speed : pp.speed;
-      if (!isL && p.charge > 0) speed = (speed * 154) >> 8;
+      let speed;
+      if (isL) speed = lp.speed;
+      else { const sprint = (a & A_SPRINT) !== 0 && p.charge === 0; speed = sprint ? pp.sprint : pp.sneak; if (p.charge > 0) speed = (speed * 154) >> 8; }
       if (p.stun > 0) speed = 0;
       p.vx = (mvx * speed) >> 8; p.vy = (mvy * speed) >> 8;
     }
@@ -287,7 +294,7 @@ const SIM = (() => {
           if (p.charge === 0) ev.push({ t: 'focus', i });
           p.charge++;
           if (p.charge >= pp.charge) {
-            p.charge = 0; p.snapCd = pp.snapCd; p.photos++; p.snaps++;
+            p.charge = 0; p.snapCd = pp.snapCd; p.photos++; p.snaps++; p.exp = 100;
             ev.push({ t: 'snap', x: p.x, y: p.y, i, photos: p.photos });
             if (p.photos >= s.cfg.photos) startSwap(s, 'photos', ev);
           }
@@ -295,6 +302,13 @@ const SIM = (() => {
           p.charge = 0; p.snapCd = 12; ev.push({ t: 'miss', x: p.x, y: p.y, i });
         }
       } else if (p.charge > 0) { p.charge = 0; }
+    }
+    if (!isL) {
+      let gain = 0;
+      if (p.charge > 0) gain += 10;
+      if ((a & A_SPRINT) && moving && p.dashLeft === 0 && p.charge === 0) gain += (3 * pp.expGain) >> 1;
+      if (gain > 0) p.exp = Math.min(100, p.exp + gain);
+      else if (p.stun === 0) p.exp = Math.max(0, p.exp - pp.expDecay);
     }
     p.prevA = a;
   }
@@ -334,7 +348,7 @@ const SIM = (() => {
         { const dx = b.x - P.x, dy = b.y - P.y, rr = PLAYER_R + BALL_R;
           if (dx * dx + dy * dy <= rr * rr) {
             const lost = P.photos;
-            P.photos = 0; P.stun = 24; P.charge = 0; L.hits++;
+            P.photos = 0; P.stun = 24; P.charge = 0; P.exp = 100; L.hits++;
             ev.push({ t: 'papHit', x: P.x, y: P.y, lost });
             dropBall(b); break;
           } }
@@ -463,7 +477,11 @@ const SIM = (() => {
       if (s.phase === 0) updateBall(s, ev);
       updateCrowd(s);
       resolveCollisions(s);
-      s.players[s.lebron].lebronTicks++;
+      const L = s.players[s.lebron];
+      L.lebronTicks++;
+      if (s.tick % 15 === 0 && L.pr < PR_MAX) {
+        for (const c of s.crowd) { const dx = c.x - L.x, dy = c.y - L.y; if (c.down === 0 && dx * dx + dy * dy < (70 * FP) ** 2) { L.pr++; break; } }
+      }
     }
     s.timeLeft--;
     if (s.timeLeft <= 0) {
@@ -482,7 +500,7 @@ const SIM = (() => {
     mix(s.tick); mix(s.rng); mix(s.timeLeft); mix(s.phase); mix(s.lebron); mix(s.freezeLeft); mix(s.swaps);
     for (const p of s.players) {
       mix(p.x); mix(p.y); mix(p.vx); mix(p.vy); mix(p.fx); mix(p.fy); mix(p.dashCd); mix(p.dashLeft);
-      mix(p.stun); mix(p.pr); mix(p.photos); mix(p.charge); mix(p.snapCd); mix(p.perkL); mix(p.perkP); mix(p.prevA); mix(p.bd);
+      mix(p.stun); mix(p.pr); mix(p.photos); mix(p.charge); mix(p.snapCd); mix(p.perkL); mix(p.perkP); mix(p.prevA); mix(p.bd); mix(p.exp); mix(p.disg); mix(p.dface);
     }
     const b = s.ball; mix(b.st); mix(b.x); mix(b.y); mix(b.vx); mix(b.vy); mix(b.holder); mix(b.grace); mix(b.bounces); mix(b.ground);
     for (const c of s.crowd) { mix(c.x); mix(c.y); mix(c.vx); mix(c.vy); mix(c.tx); mix(c.ty); mix(c.timer); mix(c.down); }
@@ -490,7 +508,7 @@ const SIM = (() => {
   }
 
   return { FP, TPS, WPX, HPX, W, H, PLAYER_R, CROWD_R, BALL_R, OBS_R, OBSTACLES, PERKS, DEFAULT_CFG, EMPTY_INPUT,
-    A_PRIMARY, A_DASH, A_PERK1, A_PERK2, A_PERK3, PR_MAX, FREEZE_TICKS,
+    A_PRIMARY, A_DASH, A_PERK1, A_PERK2, A_PERK3, A_SPRINT, EXPOSED, PR_MAX, FREEZE_TICKS,
     createState, step, hashState, lebronParams, papParams, inFrame, losClear, norm, isqrt, moveBits, botInput };
 })();
 if (typeof module !== 'undefined') module.exports = SIM;
