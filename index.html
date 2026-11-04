@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeBron vs Paparazzi</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game" class="hidden"></canvas>
+<div id="banner" class="hidden"></div>
+<div id="endbtns" class="hidden">
+  <button id="btnRematch">Rematch</button>
+  <button id="btnLeave" class="ghost">Leave</button>
+</div>
+
+<div id="menu" class="screen">
+  <div class="card">
+    <h1>LEBRON vs PAPARAZZI <span>peer-to-peer · lockstep</span></h1>
+    <p class="sub">Be LeBron when the clock hits zero. Paparazzi: snap him. LeBron: bonk them with the ball, but mind the fans.</p>
+    <label>Your name</label>
+    <input id="name" maxlength="12" placeholder="Player">
+    <div class="row" style="margin-top:12px">
+      <div class="col">
+        <h2>Create lobby</h2>
+        <label>Match length</label>
+        <select id="cMinutes"><option value="1">1 minute</option><option value="2">2 minutes</option><option value="3" selected>3 minutes</option><option value="4">4 minutes</option><option value="5">5 minutes</option></select>
+        <label>Crowd size</label>
+        <select id="cCrowd"><option value="8">Sparse (8)</option><option value="14" selected>Normal (14)</option><option value="20">Packed (20)</option></select>
+        <label>Photos to steal fame</label>
+        <select id="cPhotos"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select>
+        <label>Crowd hits LeBron can afford</label>
+        <select id="cPr"><option value="3">3</option><option value="4" selected>4</option><option value="5">5</option></select>
+        <label>Who starts as LeBron</label>
+        <select id="cStart"><option value="0" selected>Random</option><option value="1">Host</option><option value="2">Guest</option></select>
+        <button id="btnCreate">Create lobby</button>
+        <div id="createStatus" class="status"></div>
+      </div>
+      <div class="col">
+        <h2>Join lobby</h2>
+        <label>Lobby code</label>
+        <input id="joinCode" class="code" maxlength="5" placeholder="ABCDE">
+        <button id="btnJoin">Join</button>
+        <div id="joinStatus" class="status"></div>
+        <h2 style="margin-top:22px">Practice</h2>
+        <button id="btnSolo" class="ghost">Solo vs bot</button>
+        <div class="rules" style="margin-top:18px">
+          <b>Controls:</b> <kbd>WASD</kbd>/arrows move · mouse aims · <kbd>click</kbd>/<kbd>space</kbd> throw / hold to snap · <kbd>shift</kbd> dash · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> pick perk during a swap.<br>
+          <b>Paparazzi:</b> hold snap with LeBron inside your frame (range + angle + clear line of sight) for half a second. 3 photos = you become LeBron.<br>
+          <b>LeBron:</b> throw the ball at the paparazzi to wipe their photos. Hitting a fan costs PR; at 0 PR you lose the crown. Fans drift toward LeBron: cover for him, risk for his throws.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="lobby" class="screen hidden">
+  <div class="card">
+    <h1>LOBBY <span id="lobbyRole"></span></h1>
+    <div id="codeWrap"><p class="sub">Send this code to your friend:</p><div class="codebox" id="codeBox"></div></div>
+    <div class="players"><div class="pl" id="pl0">…</div><div class="pl" id="pl1">…</div></div>
+    <div class="row">
+      <div class="col">
+        <h2>Match settings <small id="settingsNote" style="color:#888;font-weight:normal"></small></h2>
+        <label>Match length</label>
+        <select id="lMinutes" data-k="minutes"><option value="1">1 minute</option><option value="2">2 minutes</option><option value="3">3 minutes</option><option value="4">4 minutes</option><option value="5">5 minutes</option></select>
+        <label>Crowd size</label>
+        <select id="lCrowd" data-k="crowd"><option value="8">Sparse (8)</option><option value="14">Normal (14)</option><option value="20">Packed (20)</option></select>
+        <label>Photos to steal fame</label>
+        <select id="lPhotos" data-k="photos"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+        <label>Crowd hits LeBron can afford</label>
+        <select id="lPr" data-k="prHits"><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+        <label>Who starts as LeBron</label>
+        <select id="lStart" data-k="startRole"><option value="0">Random</option><option value="1">Host</option><option value="2">Guest</option></select>
+        <div class="status" id="pingBox"></div>
+      </div>
+      <div class="col">
+        <h2>Your LeBron perk</h2>
+        <div class="perks" id="perksL"></div>
+        <h2 style="margin-top:14px">Your Paparazzi perk</h2>
+        <div class="perks" id="perksP"></div>
+        <p class="sub" style="margin-top:10px">You can re-pick a perk every time roles swap.</p>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnReady">I'm ready</button>
+      <button id="btnStart" disabled>Start match</button>
+      <button id="btnLobbyLeave" class="ghost">Leave</button>
+    </div>
+    <div class="status" id="lobbyStatus"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="sim.js"></script>
+<script src="net.js"></script>
+<script src="render.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
